@@ -1,0 +1,143 @@
+<?php
+
+namespace App\Http\Controllers\FollowUp;
+
+use App\Http\Controllers\Controller;
+use App\Http\Resources\FollowUpResource;
+use App\Models\Activity;
+use App\Models\Lead;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class FollowUpController extends Controller
+{
+    /** @var list<string> */
+    private const LEAD_SUBJECT_TYPES = ['lead', Lead::class];
+
+    public function index(Request $request): JsonResponse
+    {
+        $user      = $request->user();
+        $isManager = $user->isAdmin();
+
+        $query = Lead::query()
+            ->where('status', 'followup')
+            ->with(['assignedTo', 'course:id,name,code']);
+
+        $this->branchScope()->constrainVisible($query, $user);
+        $this->branchScope()->applyAssigneeFilter($query, $user);
+
+        if ($search = $request->input('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhere('city', 'like', "%{$search}%")
+                  ->orWhere('phone', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status = $request->input('status')) {
+            $this->applyFollowUpActivityExists($query, function ($q) use ($status) {
+                match ($status) {
+                    'done'    => $q->where('a.is_done', true),
+                    'overdue' => $q->where('a.is_done', false)->where('a.due_at', '<', now()),
+                    'pending' => $q->where('a.is_done', false)->where('a.due_at', '>=', now()),
+                    default   => null,
+                };
+            });
+        }
+
+        if ($due = $request->input('due')) {
+            $this->applyFollowUpActivityExists($query, function ($q) use ($due) {
+                match ($due) {
+                    'today' => $q->where('a.is_done', false)
+                        ->where('a.due_at', '>=', now())
+                        ->where('a.due_at', '<=', now()->endOfDay()),
+                    // Pending items due within 30 minutes — used by My Schedule to
+                    // surface a lead 5 minutes before due_at on the client.
+                    'soon' => $q->where('a.is_done', false)
+                        ->where('a.due_at', '>=', now()->subMinute())
+                        ->where('a.due_at', '<=', now()->addMinutes(30)),
+                    'overdue' => $q->where('a.is_done', false)
+                        ->where('a.due_at', '<', now()),
+                    default => null,
+                };
+            });
+        }
+
+        $query->orderByDesc('updated_at');
+
+        $leads = $query->paginate($request->input('per_page', 20));
+
+        $leadIds = $leads->getCollection()->pluck('id');
+
+        // Prefer the current open follow-up; fall back to the latest completed one.
+        $activities = Activity::whereIn('subject_id', $leadIds)
+            ->where(function ($q) {
+                foreach (self::LEAD_SUBJECT_TYPES as $type) {
+                    $q->orWhere('subject_type', $type);
+                }
+            })
+            ->where('type', 'task')
+            ->whereNotNull('due_at')
+            ->orderBy('is_done')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->unique('subject_id')
+            ->keyBy('subject_id');
+
+        $leads->getCollection()->transform(function (Lead $lead) use ($activities) {
+            $lead->setRelation('followUpActivity', $activities->get($lead->id));
+
+            return $lead;
+        });
+
+        return response()->json([
+            'data' => FollowUpResource::collection($leads),
+            'meta' => [
+                'total'        => $leads->total(),
+                'per_page'     => $leads->perPage(),
+                'current_page' => $leads->currentPage(),
+                'last_page'    => $leads->lastPage(),
+            ],
+        ]);
+    }
+
+    /** @param callable(\Illuminate\Database\Query\Builder): void $constraints */
+    private function applyFollowUpActivityExists(Builder $query, callable $constraints): void
+    {
+        $subjectTypes = self::LEAD_SUBJECT_TYPES;
+        $leadClass    = Lead::class;
+
+        $query->whereExists(function ($sub) use ($constraints, $subjectTypes, $leadClass) {
+            $sub->selectRaw('1')
+                ->from('activities as a')
+                ->whereColumn('a.subject_id', 'leads.id')
+                ->where(function ($q) use ($subjectTypes) {
+                    foreach ($subjectTypes as $type) {
+                        $q->orWhere('a.subject_type', $type);
+                    }
+                })
+                ->where('a.type', 'task')
+                ->whereNotNull('a.due_at')
+                ->whereNull('a.deleted_at')
+                ->whereRaw(
+                    "a.id = (
+                        SELECT a2.id FROM activities a2
+                        WHERE a2.subject_id = leads.id
+                          AND a2.type = 'task'
+                          AND a2.due_at IS NOT NULL
+                          AND a2.deleted_at IS NULL
+                          AND (a2.subject_type = ? OR a2.subject_type = ?)
+                        ORDER BY a2.is_done ASC, a2.updated_at DESC, a2.created_at DESC
+                        LIMIT 1
+                    )",
+                    [$subjectTypes[0], $leadClass]
+                );
+
+            $constraints($sub);
+        });
+    }
+}

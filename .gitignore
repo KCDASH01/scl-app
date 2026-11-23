@@ -1,0 +1,30 @@
+@'
+# Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies and generated files
+node_modules/
+vendor/
+.next/
+.next-dev/
+out/
+*.tsbuildinfo
+
+# Backups and logs
+*.sql
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.zip
+*.log
+
+# Editor files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+'@ | Set-Content .gitignore
