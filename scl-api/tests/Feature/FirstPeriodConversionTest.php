@@ -96,6 +96,9 @@ class FirstPeriodConversionTest extends TestCase
         $this->postJson('/api/deals/'.$deal->id.'/payments', ['amount' => 480, 'payment_date' => now()->toDateString(), 'payment_mode' => 'cash'])->assertCreated();
         $this->assertSame('won', $deal->fresh()->status);
         $this->assertSame(now()->toDateString(), $deal->fresh()->closed_at->toDateString());
+        $existingSchedule = $admission->fresh()->fee_schedule;
+        $this->artisan('fees:convert-first-period --apply')->assertExitCode(0);
+        $this->assertEquals($existingSchedule, $admission->fresh()->fee_schedule);
     }
 
     public function test_duration_alone_does_not_charge_and_unit_change_or_truncation_is_atomic(): void
@@ -113,16 +116,16 @@ class FirstPeriodConversionTest extends TestCase
         $this->assertSame('years', $course->fresh()->duration_unit);
     }
 
-    public function test_invalid_financial_records_block_entire_course_and_require_conversion_before_extension(): void
+    public function test_invalid_admission_is_skipped_but_course_template_converts_and_extension_remains_guarded(): void
     {
         extract($this->legacy(false, 90));
         $this->artisan('fees:convert-first-period --apply')->assertExitCode(1);
-        $this->assertNull($course->fresh()->duration_value);
+        $this->assertEquals(1, $course->fresh()->duration_value);
         $this->assertNull($admission->fresh()->fee_schedule);
         $this->assertNull($payment->fresh()->allocations);
-        $this->assertDatabaseCount('first_period_conversion_backups', 0);
+        $this->assertDatabaseCount('first_period_conversion_backups', 1);
         $this->extend($course, [['period' => 1, 'amount' => 100], ['period' => 2, 'amount' => 200]])->assertUnprocessable();
-        $this->assertNull($course->fresh()->duration_value);
+        $this->assertEquals(1, $course->fresh()->duration_value);
     }
 
     public function test_partial_payments_and_existing_receipt_snapshots_survive_conversion(): void
@@ -144,10 +147,10 @@ class FirstPeriodConversionTest extends TestCase
         $this->artisan('fees:convert-first-period --apply')->assertExitCode(1);
         $this->assertNull($admission->fresh()->fee_schedule);
         $deal->update(['status' => 'open']);
-        $course->update(['duration_value' => 3]);
+        $course->refresh()->update(['duration_value' => 3, 'duration_unit' => null]);
         $this->artisan('fees:convert-first-period --apply')->assertExitCode(1);
         $this->assertNull($admission->fresh()->fee_schedule);
-        $this->assertDatabaseCount('first_period_conversion_backups', 0);
+        $this->assertDatabaseCount('first_period_conversion_backups', 1);
     }
 
     public function test_existing_month_unit_and_duration_are_retained_and_only_period_one_is_converted(): void

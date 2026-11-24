@@ -122,12 +122,63 @@ only creates the backup ledger; deploying/migrating alone does not convert data.
 5. Compare totals and transaction counts with the backup; deploy the frontend and
    reopen access. Rerunning the command skips converted admission snapshots.
 
-Each course commits atomically with its admissions. If any linked fee fails
-validation, that entire course is left unchanged; other valid courses may commit.
-The command exits nonzero if any course failed. It blocks overpayments, Won records
-without matching actual payments, received fields exceeding transaction totals,
-missing/duplicate fee records, mixed schedules, and incomplete course durations.
-It never synthesizes missing payments. Review these exceptions manually.
+Course templates are validated and committed separately. Each individual admission
+and all its active deals, payments, allocation snapshots, receipts, backups and
+audits convert in one transaction. Expected financial validation failures roll back
+only that admission and continue to the next student, including within the same
+course. A valid template may therefore become 1 year even when some or all of its
+admissions are skipped. Unexpected database/infrastructure failures abort the run;
+previously committed admissions remain committed. Never rerun blindly after an
+infrastructure failure: inspect the error, then review preview again.
+
+Only non-deleted courses and admissions are examined. Admissions associated with
+deleted/missing leads are excluded and reported. Only active course/hostel deals
+and their own payments are converted. Deleted deals are read solely for ambiguity
+detection: ANY historical payment on a deleted course or hostel deal causes that
+admission to be skipped, even if an active replacement exists. Such payments are
+never transferred, allocated or changed. No deleted record is restored, removed
+or given a new deletion timestamp. An unpaid deleted deal is left untouched and
+does not by itself block a valid active deal.
+
+Before any writes, a read-only MySQL/MariaDB preflight requires all participating
+tables to exist and use InnoDB. Nontransactional/missing tables abort both modes;
+the command never changes storage engines or repairs schema automatically.
+
+Other skipped cases include missing/duplicate active fee deals, required hostel
+fees missing, duplicate active admission relationships, mixed schedules, existing
+allocations without a matching admission schedule, branch/course relationship
+mismatches, invalid amounts, overpayments, Won fees without matching payments,
+received fields exceeding payment totals, or conflicting legacy hostel amounts.
+Incomplete/invalid course duration/pricing blocks that course, with affected
+admission IDs reported. The converter never fabricates missing fees/payments or
+repairs ambiguous relationships.
+
+Every run prints detailed excluded/skipped admission IDs/reasons and a final
+`SUMMARY` JSON line with:
+
+- courses examined, converted templates, already configured templates, skipped;
+- admissions examined, newly eligible/converted, excluded leads, financial skips,
+  already converted, and admissions blocked by invalid course templates;
+- course/hostel deals converted and payment allocations generated;
+- payment counts and totals before/after across ALL historical payments, including
+  payments attached to deleted deals, and an unchanged-invariants flag.
+
+In preview, converted counts are hypothetical. Every database write, including
+course/admission changes, backups and audits, rolls back. Preview executes the same
+service and validation as apply; admission savepoints allow valid hypothetical
+conversions to continue after a record-level failure. Pause all writes for reliable
+before/after reconciliation; these aggregate totals do not replace a full backup.
+`eligible_admissions` counts newly convertible legacy admissions; validated
+already-converted records have a separate count. Already-converted records are
+validated without rewriting their schedules, allocations, receipts or audits.
+Historical gaps and extended schedules are retained. Skipped records are reconsidered
+on future runs after a legitimate reviewed correction.
+
+Exit status is 0 when there are no invalid courses or financial skips; deleted/missing
+lead exclusions alone do not cause failure. Exit status 1 can mean partial success:
+inspect the SUMMARY and individual reasons. Unexpected failures abort instead of
+being classified as record-level skips. Summary `completed: false` identifies an
+aborted run when the database is available to print its summary.
 
 Courses without duration become 1 year, with their original template price in
 Year 1. Existing valid units/durations are retained. Each legacy student's Year 1
@@ -143,3 +194,52 @@ Existing receipt snapshots remain untouched. Missing snapshots are captured
 against the original first-period agreement before any later fees are appended.
 Do not roll back the schema to undo financial conversion: the backup-table migration
 refuses to drop a populated ledger. Use a reviewed database restoration/reconciliation.
+
+### Linux VPS rollout for the active-record conversion fix
+
+This fix changes only API code, tests and this documentation. Production migrations
+have already run: do not modify/rerun them, seed data, restore a database, or rebuild
+the frontend just for this fix. First commit and push the reviewed changes from the
+development machine. Replace `/var/www/school-crm` below with the actual existing
+repository parent containing all three app folders. Use a maintenance window and
+take an external database/upload backup first. Pause other writers/queue workers
+through the VPS's existing process manager as well as web access.
+
+```bash
+cd /var/www/school-crm
+git status --short
+# Stop if there are unexplained tracked server edits; do not reset or discard them.
+php scl-api/artisan down
+php scl-dashboard/artisan down
+git pull --ff-only origin main
+cd scl-api
+composer install --no-dev --optimize-autoloader --no-interaction
+php artisan optimize:clear
+set -o pipefail
+php artisan fees:convert-first-period | tee "$HOME/first-period-preview.log"
+```
+
+Review the full preview and SUMMARY. Financial skips do not block other valid
+admissions; do not restore deleted records or move their payments to remove skips.
+Only after accepting the proposed eligible conversions:
+
+```bash
+php artisan fees:convert-first-period --apply | tee "$HOME/first-period-apply.log"
+```
+
+Check SUMMARY `completed`, before/after payment counts and amounts, individual
+skips, unchanged paid statuses, sample receipts and fee allocations. Payment totals
+must match the actual production baseline measured by the command (not hardcoded
+audit examples). Keep maintenance enabled if an unexpected failure occurs.
+When verification is satisfactory, resume your paused workers and web access:
+
+```bash
+php artisan up
+cd ../scl-dashboard
+php artisan up
+```
+
+Run local verification using `php vendor/bin/phpunit --filter FirstPeriod` from
+`scl-api`; `phpunit.xml` uses isolated SQLite `:memory:`. Never point the test suite
+at production. The existing future-period/course editing rules are unchanged;
+unconverted records retain their existing editing restrictions until reviewed.
