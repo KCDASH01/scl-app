@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Schema;
 
 class Deal extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     use BelongsToBranch, SoftDeletes;
 
     protected $fillable = [

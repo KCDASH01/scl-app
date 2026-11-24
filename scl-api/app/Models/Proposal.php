@@ -9,6 +9,8 @@ use App\Models\Concerns\BelongsToBranch;
 
 class Proposal extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     use BelongsToBranch;
 
     protected $fillable = [

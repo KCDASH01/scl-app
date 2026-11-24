@@ -878,6 +878,10 @@ export default function LeadsPage() {
     onError: (_err, _id, ctx) => {
       if (ctx?.prev) qc.setQueryData(['leads', listFilters], ctx.prev);
     },
+    onSuccess: (_data, id) => {
+      qc.removeQueries({ queryKey: ['lead', id] });
+      qc.invalidateQueries();
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['leads'] });
       qc.invalidateQueries({ queryKey: ['lead-department-counts'] });

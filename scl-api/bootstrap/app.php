@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->use([
             \Illuminate\Http\Middleware\HandleCors::class,
+            \App\Http\Middleware\FilterDeletedLeadRecords::class,
         ]);
         $middleware->alias([
             'check.organization' => CheckOrganization::class,

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AttendanceRecord extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     use BelongsToBranch;
 
     public const STATUSES = ['present', 'absent'];

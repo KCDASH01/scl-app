@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Note extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     use SoftDeletes;
 
     protected $fillable = [

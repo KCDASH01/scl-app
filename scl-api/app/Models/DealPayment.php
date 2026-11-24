@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Schema;
 
 class DealPayment extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     use BelongsToBranch;
 
     protected $fillable = [

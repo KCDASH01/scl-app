@@ -55,6 +55,28 @@ npm run dev
 - **Admin / manager:** team, departments, email templates, receipt settings, org-wide reports.
 - **Employee:** assigned records only; cannot manage team.
 
+## Deleted lead visibility
+
+Normal HTTP pages and API endpoints show lead-related records only while their
+associated lead exists and is not soft-deleted. A request-level middleware enables
+the shared model visibility scope before route binding. Admissions, both fee
+collections, payments/receipts, attendance, documents, activities, notes, proposals,
+notifications, reports, exports and derived totals follow the same rule. Direct
+detail/edit/payment URLs for hidden records return 404. Standalone tasks or deals
+without a lead remain available because they do not belong to a deleted lead.
+
+Deleting a lead still performs only the existing lead soft-delete and audit log.
+Related rows/payments/uploads are retained. No retrospective data migration is
+needed: existing orphan/deleted-lead records are hidden on the next request.
+Visibility ends with the request (including streamed exports); console conversion,
+backups and financial reconciliation retain historical access. Enrollment number
+generation explicitly includes hidden history so deleted student IDs cannot be
+reused. Lead deletion refreshes all cached page queries in the frontend.
+
+Deploy the updated API and dashboard code and rebuild the frontend using its
+existing production API URL. Clear Laravel caches in both apps. No migration or
+first-period conversion command is required for this visibility change.
+
 ## Unit-based course and hostel fees
 
 Run migrations from `scl-dashboard` before using this feature. The migration

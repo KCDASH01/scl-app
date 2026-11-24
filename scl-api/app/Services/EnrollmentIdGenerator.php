@@ -15,6 +15,8 @@ class EnrollmentIdGenerator
         $prefix = "{$code}-{$year}-";
 
         $last = Admission::withTrashed()
+            // Hidden historical admissions still reserve their enrollment numbers.
+            ->withoutGlobalScope('active_lead_visibility')
             ->where('branch_id', $branchId)
             ->where('enrollment_id', 'like', $prefix.'%')
             ->lockForUpdate()

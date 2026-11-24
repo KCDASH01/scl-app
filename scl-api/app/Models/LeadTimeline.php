@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Schema;
 
 class LeadTimeline extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     protected $table = 'lead_timeline';
 
     protected $fillable = [

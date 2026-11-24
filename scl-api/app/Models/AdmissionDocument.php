@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AdmissionDocument extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     public const TYPES = ['id_proof', 'photo', 'marksheet', 'other'];
 
     protected $fillable = [

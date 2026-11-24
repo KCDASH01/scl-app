@@ -161,7 +161,7 @@ export default function LeadDetailPage() {
 
   const deleteMutation = useMutation({
     mutationFn: () => leadsApi.delete(leadId),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leads'] }); router.push(leadsReturnUrl()); },
+    onSuccess: () => { qc.removeQueries({ queryKey: ['lead', leadId] }); qc.invalidateQueries(); router.push(leadsReturnUrl()); },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       alert(msg ?? 'Failed to delete lead.');

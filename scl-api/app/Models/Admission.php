@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Admission extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     use BelongsToBranch, SoftDeletes;
 
     public const STATUSES = ['pending', 'admitted'];

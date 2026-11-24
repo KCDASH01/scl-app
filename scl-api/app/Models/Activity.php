@@ -10,6 +10,8 @@ use App\Models\Concerns\BelongsToBranch;
 
 class Activity extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     use SoftDeletes, BelongsToBranch;
 
     protected $fillable = [

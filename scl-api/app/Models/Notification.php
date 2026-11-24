@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Notification extends Model
 {
+    use \App\Models\Concerns\HasActiveLeadVisibility;
+
     protected $fillable = [
         'user_id',
         'type',
